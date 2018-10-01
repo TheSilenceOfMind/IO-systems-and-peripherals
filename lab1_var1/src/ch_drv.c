@@ -10,115 +10,14 @@
 #include <asm/segment.h>
 #include <asm/uaccess.h>
 
+#include "../include/kfs.h"
+#include "../include/util.h"
+
 static dev_t first;
 static struct cdev c_dev;
 static struct class *cl;
 static struct file *work_file;
 static int counter;
-
-// compares strings by EOL ('\0') or ('\x0A').
-// returns 0 if equal.
-static int string_compare(const char* str1, const char* str2) {
-    while(*str1 == *str2) {
-        if(*str1 == '\0' || *str2 == '\0' || *str1 == '\x0A' || *str2 == '\x0A')
-            break;
-        str1++;
-        str2++;
-    }
-    if ((*str1 == '\0' && *str2 == '\0') || (*str1 == '\x0A' && *str2 == '\x0A'))
-        return 0;
-    else
-        return -1;
-}
-
-static void print_string(const char* str) {
-    int code = *str;
-    int i = 0;
-
-    printk(KERN_DEBUG "%s\n", str);
-    while (code != 0 && code != 10) {
-        printk(KERN_DEBUG "[%d] = %d", i, code);
-        str++;
-        code = *str;
-        i++;
-    }
-}
-
-struct file *file_open(const char *path, int flags, int rights) {
-    struct file *filp = NULL;
-    mm_segment_t oldfs;
-    int err = 0;
-
-    oldfs = get_fs();
-    set_fs(get_ds());
-    filp = filp_open(path, flags, rights);
-    set_fs(oldfs);
-    // If we've not opened file.
-    if (IS_ERR(filp)) {
-        printk(KERN_DEBUG "file_open(): file is not opened. [%d]\n", __LINE__);
-        err = PTR_ERR(filp);
-        return NULL;
-    }
-    printk(KERN_DEBUG "file_open(): file opened. [%d]\n", __LINE__);
-    return filp;
-}
-
-void file_close(struct file *file) {
-    filp_close(file, NULL);
-}
-
-int file_read(struct file *file, unsigned long long offset,
-    unsigned char *data, unsigned int size) {
-    mm_segment_t oldfs;
-    int ret;
-
-    oldfs = get_fs();
-    set_fs(get_ds());
-
-    ret = vfs_read(file, data, size, &offset);
-
-    set_fs(oldfs);
-    return ret;
-}
-
-int file_write(struct file *file, unsigned long long offset,
-    unsigned char *data, unsigned int size) {
-    mm_segment_t oldfs;
-    int ret;
-
-    oldfs = get_fs();
-    set_fs(get_ds());
-
-    ret = vfs_write(file, data, size, &offset);
-
-    set_fs(oldfs);
-    return ret;
-}
-
-int file_sync(struct file *file) {
-    vfs_fsync(file, 0);
-    return 0;
-}
-
-// the function to convert int to string. Used in order to pass in file_write().
-// returns number of characters.
-int int2str(char* str, int counter) {
-    int len = 0;
-    int i;
-
-    // write in backward order.
-    while (counter > 0) {
-        str[len++] = '0' + counter % 10;
-        counter /= 10;
-    }
-    // reverse chars in array.
-    for (i = 0; i < len / 2; i++) {
-        char w = str[i];
-        str[i] = str[len - 1 - i];
-        str[len - 1 - i] = w;
-    }
-    return len;
-}
 
 static int my_open(struct inode *i, struct file *f) {
     return 0;
@@ -129,7 +28,6 @@ static int my_close(struct inode *i, struct file *f) {
 }
 
 // "ssize" stands for "signed size"
-// TODO: write my_read func.
 static ssize_t my_read(struct file *f, char __user *buf, size_t len,
                        loff_t *off) {
     // if not opened, try to open and after reading close.
